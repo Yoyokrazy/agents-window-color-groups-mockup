@@ -1,0 +1,7 @@
+{
+	"vscodeRepository": "https://github.com/microsoft/vscode",
+	"vscodeCommit": "c644b06c990db3df15ba1ef2e98264eeaff73abf",
+	"vscodeLocalChanges": 0,
+	"fixture": "src/vs/sessions/contrib/sessions/test/browser/colorGroupsMockup/colorGroupsMockup.fixture.ts",
+	"builtAt": "2026-09-29T21:22:34Z"
+}
