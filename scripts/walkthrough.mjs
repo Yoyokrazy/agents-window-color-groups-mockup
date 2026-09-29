@@ -302,7 +302,42 @@ await snap('compact');
 await click(page.getByRole('radio', { name: 'Two-line session rows' }));
 await pause(800);
 
-// 12. Theme switch reloads the other theme variant and keeps the demo state
+// 12. Collection switchers: only the selected one shows, and the collection editor opens below what you used
+await caption('Switch collections from the title bar, sidebar tabs, or the Sessions menu');
+const switcherRadio = { titlebar: 'Browser-style icon strip beside the window controls', tabs: 'Labeled tabs at the top of the sidebar', menu: 'Only the Sessions header menu' };
+const visible = selector => page.locator(selector).evaluate(el => el.getClientRects().length > 0);
+const editorBelow = async (anchor, label) => {
+	await page.locator('.cg-collection-editor').waitFor();
+	await pause(900);
+	const a = await anchor.boundingBox();
+	const e = await page.locator('.cg-collection-editor').boundingBox();
+	check(e.y >= a.y + a.height - 1 && e.y - (a.y + a.height) < 16 && Math.abs(e.x - a.x) < 16, `Edit Collection from ${label} opens right below it (anchor ${Math.round(a.x)},${Math.round(a.y + a.height)} editor ${Math.round(e.x)},${Math.round(e.y)})`);
+	await page.keyboard.press('Escape');
+	await pause(400);
+	check(await page.locator('.cg-collection-editor:visible').count() === 0, 'Escape closes the collection editor');
+};
+check(await isChecked(switcherRadio.titlebar), 'the title bar switcher is the default');
+for (const mode of ['titlebar', 'tabs', 'menu']) {
+	await click(page.getByRole('radio', { name: switcherRadio[mode], exact: true }));
+	await pause(700);
+	check(await visible('.cg-collection-strip') === (mode === 'titlebar') && await visible('.cg-collection-tabs') === (mode === 'tabs'), `the ${mode} mode shows ${mode === 'titlebar' ? 'only the title bar strip' : mode === 'tabs' ? 'only the sidebar tabs' : 'neither the strip nor the tabs'}`);
+	const anchor = mode === 'titlebar'
+		? page.locator('.cg-strip-button[data-collection-id="personal"]')
+		: mode === 'tabs' ? page.locator('.cg-tab[data-collection-id="personal"]') : page.locator('.cg-header-title');
+	if (mode === 'menu') {
+		await click(anchor);
+	} else {
+		await move(anchor);
+		await anchor.click({ button: 'right' });
+	}
+	await pause(600);
+	await click(menuItem('Edit Collection…'));
+	await editorBelow(anchor, mode === 'titlebar' ? 'the title bar' : mode === 'tabs' ? 'a tab' : 'the Sessions menu');
+}
+await click(page.getByRole('radio', { name: switcherRadio.titlebar, exact: true }));
+await pause(600);
+
+// 13. Theme switch reloads the other theme variant and keeps the demo state
 if (themeSwitch && theme !== 'DarkHighContrast') {
 	await caption('Switch themes: the demo keeps its state');
 	await click(page.getByRole('radio', { name: styleRadio.Outline, exact: true }));
