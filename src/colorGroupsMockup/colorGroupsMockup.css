@@ -197,7 +197,7 @@
 
 /* While dragging from the list, collection buttons advertise that they accept drops. */
 .cg-collection-strip.cg-dragging .cg-strip-button:not(.active):not(.cg-strip-add),
-.cg-window[data-switcher="tabs"] .cg-dragging-tabs .cg-tab:not(.active) {
+.cg-window[data-switcher="tabs"] .cg-dragging-tabs .cg-tab:not(.active):not(.cg-tab-add) {
 	outline: var(--vscode-strokeThickness, 1px) dashed var(--cg-accent);
 	outline-offset: -1px;
 }
@@ -229,12 +229,12 @@
 
 /* Labeled collection tabs (segmented control) */
 .cg-collection-tabs {
-	display: none;
 	margin: var(--vscode-spacing-size20) var(--vscode-spacing-size120) var(--vscode-spacing-size80);
 }
 
-.cg-window[data-switcher="tabs"] .cg-collection-tabs {
-	display: flex;
+/* Specific enough to beat the radio widget's own `display: flex`. */
+.cg-window:not([data-switcher="tabs"]) .cg-collection-tabs {
+	display: none;
 }
 
 .cg-collection-tabs > .monaco-button.cg-tab {
@@ -261,6 +261,14 @@
 .cg-tab .cg-strip-badge {
 	top: 2px;
 	right: 2px;
+}
+
+/* New Collection: a compact icon button after the tabs, like the title bar strip's. Specific enough to beat the segmented radio's equal-width buttons. */
+.cg-collection-tabs.segmented > .monaco-button.cg-tab-add {
+	flex: none;
+	width: 26px;
+	padding: 0;
+	color: var(--vscode-descriptionForeground);
 }
 
 /* Navigation rows above the Sessions header */

@@ -197,6 +197,7 @@ export class ColorGroupsMockupView extends Disposable {
 	private readonly window: HTMLElement;
 	private readonly sidebar: HTMLElement;
 	private readonly listHost: HTMLElement;
+	private readonly headerTitle: HTMLElement;
 	private readonly headerEditor: ColorGroupsHeaderEditor;
 	private readonly collectionEditor: ColorGroupsCollectionEditor;
 	private readonly toastTimer = this._register(new MutableDisposable());
@@ -275,7 +276,7 @@ export class ColorGroupsMockupView extends Disposable {
 
 		this.renderStrip(strip);
 		this.renderTabs(tabs);
-		this.renderSessionsHeader(header);
+		this.headerTitle = this.renderSessionsHeader(header);
 		this.renderToast(toast);
 		if (options.controls) {
 			this.renderControls(DOM.append(root, $('.cg-controls')), options.themeSwitch);
@@ -402,18 +403,27 @@ export class ColorGroupsMockupView extends Disposable {
 		}
 	}
 
-	/** Opens the collection editor, anchored to the collection's switcher button. */
-	editCollection(collectionId: string, isNew = false): void {
-		const anchor = this.root.querySelector<HTMLElement>(`[data-collection-id="${collectionId}"]:not([hidden])`) ?? this.window;
+	/**
+	 * Opens the collection editor below `anchor`: by default the collection's visible
+	 * switcher button, or the Sessions header menu when no switcher shows it. Anchors are
+	 * resolved lazily because the switchers re-render as the collection is edited.
+	 */
+	editCollection(collectionId: string, isNew = false, anchor: () => HTMLElement = () => this.collectionAnchor(collectionId, this.window)): void {
 		this.collectionEditor.show(collectionId, anchor, isNew);
 	}
 
-	private newCollection(): void {
+	/** The visible button for the collection within `switcher`, falling back to the Sessions header menu. */
+	private collectionAnchor(collectionId: string, switcher: HTMLElement): HTMLElement {
+		const buttons = switcher.querySelectorAll<HTMLElement>(`[data-collection-id="${collectionId}"]`);
+		return Array.from(buttons).find(button => button.getClientRects().length > 0) ?? this.headerTitle;
+	}
+
+	private newCollection(anchor?: () => HTMLElement): void {
 		const used = new Set(this.model.current.collections.map(c => c.color.kind === 'palette' ? c.color.id : undefined));
 		const color = [MockPaletteColor.Purple, MockPaletteColor.Pink, MockPaletteColor.Cyan, MockPaletteColor.Yellow, MockPaletteColor.Red].find(c => !used.has(c)) ?? MockPaletteColor.Grey;
 		const id = this.model.createCollection('New collection', 'star', { kind: 'palette', id: color });
 		this.switchTo(id);
-		DOM.getWindow(this.root).requestAnimationFrame(() => this.editCollection(id, true));
+		DOM.getWindow(this.root).requestAnimationFrame(() => this.editCollection(id, true, anchor));
 	}
 
 	private deleteCollection(collectionId: string): void {
@@ -447,10 +457,10 @@ export class ColorGroupsMockupView extends Disposable {
 		return `${collection.name} · ${sessions} sessions${attentionText}  (${ctrl}${index + 1})`;
 	}
 
-	private collectionMenuActions(collection: IMockCollection): IAction[] {
+	private collectionMenuActions(collection: IMockCollection, anchor: () => HTMLElement): IAction[] {
 		const index = this.model.current.collections.indexOf(collection);
 		return [
-			new Action('cg.editCollection', 'Edit Collection…', undefined, true, async () => this.editCollection(collection.id)),
+			new Action('cg.editCollection', 'Edit Collection…', undefined, true, async () => this.editCollection(collection.id, false, anchor)),
 			new Action('cg.moveLeft', 'Move Left', undefined, index > 0, async () => this.model.moveCollection(collection.id, -1)),
 			new Action('cg.moveRight', 'Move Right', undefined, index < this.model.current.collections.length - 1, async () => this.model.moveCollection(collection.id, 1)),
 			new Separator(),
@@ -509,11 +519,12 @@ export class ColorGroupsMockupView extends Disposable {
 					DOM.append(button, $(`span.cg-strip-badge.${attention}`));
 				}
 				store.add(this.hoverService.setupDelayedHover(button, { content: this.collectionHover(collection, index) }));
+				const anchor = () => this.collectionAnchor(collection.id, strip);
 				store.add(DOM.addDisposableListener(button, DOM.EventType.CLICK, () => this.switchTo(collection.id)));
-				store.add(DOM.addDisposableListener(button, DOM.EventType.DBLCLICK, () => this.editCollection(collection.id)));
+				store.add(DOM.addDisposableListener(button, DOM.EventType.DBLCLICK, () => this.editCollection(collection.id, false, anchor)));
 				store.add(DOM.addDisposableListener(button, DOM.EventType.CONTEXT_MENU, (e: MouseEvent) => {
 					e.preventDefault();
-					this.contextMenuService.showContextMenu({ getAnchor: () => button, getActions: () => this.collectionMenuActions(collection) });
+					this.contextMenuService.showContextMenu({ getAnchor: () => button, getActions: () => this.collectionMenuActions(collection, anchor) });
 				}));
 				this.registerCollectionDropTarget(button, collection.id, store);
 			});
@@ -558,10 +569,14 @@ export class ColorGroupsMockupView extends Disposable {
 				store.add(DOM.addDisposableListener(button, DOM.EventType.CLICK, () => this.switchTo(collection.id)));
 				store.add(DOM.addDisposableListener(button, DOM.EventType.CONTEXT_MENU, (e: MouseEvent) => {
 					e.preventDefault();
-					this.contextMenuService.showContextMenu({ getAnchor: () => button, getActions: () => this.collectionMenuActions(collection) });
+					this.contextMenuService.showContextMenu({ getAnchor: () => button, getActions: () => this.collectionMenuActions(collection, () => this.collectionAnchor(collection.id, tabs)) });
 				}));
 				this.registerCollectionDropTarget(button, collection.id, store);
 			});
+			const add = DOM.append(tabs, $('button.monaco-button.cg-tab.cg-tab-add', { type: 'button', 'aria-label': 'New Collection' }));
+			DOM.append(add, $(`span${ThemeIcon.asCSSSelector(Codicon.add)}`));
+			store.add(this.hoverService.setupDelayedHover(add, { content: 'New Collection' }));
+			store.add(DOM.addDisposableListener(add, DOM.EventType.CLICK, () => this.newCollection()));
 		}));
 	}
 
@@ -585,7 +600,7 @@ export class ColorGroupsMockupView extends Disposable {
 		}
 	}
 
-	private renderSessionsHeader(header: HTMLElement): void {
+	private renderSessionsHeader(header: HTMLElement): HTMLElement {
 		const title = DOM.append(header, $('button.cg-header-title', { type: 'button', 'aria-haspopup': 'menu' }));
 		const titleIcon = DOM.append(title, $('span.cg-header-title-icon'));
 		const titleLabel = DOM.append(title, $('span.cg-header-title-label'));
@@ -622,6 +637,7 @@ export class ColorGroupsMockupView extends Disposable {
 		}));
 		const search = this._register(new Action('cg.search', 'Search Sessions', ThemeIcon.asClassName(Codicon.search), true, async () => this.list.openFind()));
 		toolbar.push([newGroup, viewOptions, search], { icon: true, label: false });
+		return title;
 	}
 
 	private viewOptionsActions(): IAction[] {
@@ -666,8 +682,8 @@ export class ColorGroupsMockupView extends Disposable {
 			return action;
 		});
 		actions.push(new Separator());
-		actions.push(new Action('cg.newCollection', 'New Collection…', undefined, true, async () => this.newCollection()));
-		actions.push(new Action('cg.editCollection', 'Edit Collection…', undefined, true, async () => this.editCollection(active)));
+		actions.push(new Action('cg.newCollection', 'New Collection…', undefined, true, async () => this.newCollection(() => anchor)));
+		actions.push(new Action('cg.editCollection', 'Edit Collection…', undefined, true, async () => this.editCollection(active, false, () => anchor)));
 		this.contextMenuService.showContextMenu({
 			getAnchor: () => anchor,
 			getActions: () => actions,

@@ -463,13 +463,13 @@ export class ColorGroupsCollectionEditor extends Disposable {
 		super();
 	}
 
-	show(collectionId: string, anchor: HTMLElement, isNew = false): void {
+	show(collectionId: string, anchor: () => HTMLElement, isNew = false): void {
 		const checkpoint = this.model.checkpoint();
 		const session = new DisposableStore();
 		this.open.value = session;
 		session.add(toDisposable(() => this.model.commitCheckpoint(isNew ? 'Created collection' : 'Edited collection', checkpoint)));
 		this.contextViewService.showContextView({
-			getAnchor: () => anchor,
+			getAnchor: anchor,
 			anchorAlignment: AnchorAlignment.LEFT,
 			render: container => this.render(container, collectionId, isNew, session),
 			onHide: () => {
