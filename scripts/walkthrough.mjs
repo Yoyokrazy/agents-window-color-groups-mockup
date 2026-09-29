@@ -290,6 +290,32 @@ await pause(500);
 check(await page.locator('.cg-group-row', { hasText: 'pipeline health' }).count() === 1, 'a new group is created around the session');
 await snap('new-group');
 
+// 10b. Built-in Pinned and Chats sections take colors too (color only: they keep their name and place)
+await caption('Pinned and Chats can be colored too');
+check(await page.locator('.cg-group-row', { hasText: 'Pinned' }).locator('.cg-pill-icon.codicon-pinned').count() === 1, 'Pinned starts as a colored pill with its pin icon');
+const chatsHeader = page.locator('.cg-section-row', { hasText: 'Chats' });
+check(await chatsHeader.count() === 1, 'Chats starts uncolored');
+await move(chatsHeader);
+await pause(400);
+await click(chatsHeader.locator('.action-label[aria-label="Color Section…"]'));
+await page.locator('.cg-header-editor:visible').waitFor();
+await pause(500);
+check((await page.locator('.cg-header-editor:visible .cg-editor-title').textContent()).includes('Chats'), 'the section editor shows the built-in name instead of a rename field');
+check(await page.locator('.cg-header-editor:visible .cg-editor-move').count() === 0, 'built-in sections cannot move between collections');
+await click(page.locator('.cg-header-editor:visible .cg-swatch[aria-label="Yellow"]'));
+await pause(700);
+await page.keyboard.press('Escape');
+await pause(500);
+const chatsPill = page.locator('.cg-group-row', { hasText: 'Chats' });
+check(await chatsPill.locator('.cg-pill-icon.codicon-comment-discussion').count() === 1, 'Chats renders as a colored pill with its icon');
+await chatsPill.locator('.cg-group-header').click({ button: 'right' });
+await pause(500);
+const sectionMenu = (await page.locator('.monaco-menu .action-label').allTextContents()).filter(Boolean);
+check(sectionMenu.includes('Remove Color') && !sectionMenu.some(item => /Ungroup|Collection|Mark Group as Done/.test(item)), 'the section context menu offers color actions only');
+await page.keyboard.press('Escape');
+await pause(300);
+await snap('builtin-sections');
+
 // 11. Style treatments
 await caption('Try other treatments: Outline, Tint, Dot, and compact density');
 for (const style of ['Outline', 'Tint', 'Dot', 'Rail']) {

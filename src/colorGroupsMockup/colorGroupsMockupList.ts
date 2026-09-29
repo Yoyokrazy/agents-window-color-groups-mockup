@@ -33,7 +33,7 @@ import { computePullRequestIcon } from '../../../../../../workbench/common/chatP
 import { SessionStatusIcon } from '../../../../../browser/sessionStatusIcon.js';
 import { SessionStatus } from '../../../../../services/sessions/common/session.js';
 import { describeMockColor, IResolvedMockColor, MockColor, MockTextColorMode, resolveMockColor } from './colorGroupsMockupColors.js';
-import { ColorGroupsMockModel, getCollectionSessions, getGroup, getSectionOrder, getSessionsAttention, getWorkspaceStyle, groupKey, IMockSession, IMockState, isQuickChat, MockPullRequest, MockSectionKey, MockSessionStatus, workspaceKey } from './colorGroupsMockupModel.js';
+import { BUILT_IN_SECTIONS, ColorGroupsMockModel, getBuiltInSectionStyle, getCollectionSessions, getGroup, getSectionOrder, getSessionsAttention, getWorkspaceStyle, groupKey, IMockSession, IMockState, isBuiltInSection, isQuickChat, MockBuiltInSection, MockPullRequest, MockSectionKey, MockSessionStatus, workspaceKey } from './colorGroupsMockupModel.js';
 
 const $ = DOM.$;
 
@@ -74,18 +74,23 @@ export interface IMockSectionRow {
 	readonly label: string;
 	readonly icon: ThemeIcon;
 	readonly workspace?: string;
+	/** Set for the colorable built-in sections (Pinned and Chats). */
+	readonly builtIn?: MockBuiltInSection;
 	readonly sessions: readonly IMockSession[];
 	readonly collapsed: boolean;
 }
 
-/** A colored header: a custom group, or a workspace with a color. */
+/** A colored header: a custom group, a workspace, or a built-in section with a color. */
 export interface IMockGroupRow {
 	readonly kind: MockRowKind.Group;
 	readonly id: string;
-	readonly key: MockSectionKey;
+	readonly key: MockSectionKey | MockBuiltInSection;
 	readonly label: string;
 	readonly groupId?: string;
 	readonly workspace?: string;
+	readonly builtIn?: MockBuiltInSection;
+	/** Icon shown in the pill; groups have none. */
+	readonly icon?: ThemeIcon;
 	readonly color: MockColor;
 	readonly textMode: MockTextColorMode;
 	readonly resolved: IResolvedMockColor;
@@ -130,7 +135,8 @@ export function buildMockRows(state: IMockState, collectionId: string, scheme: C
 
 	const sectionRow = (sectionKey: string, label: string, icon: ThemeIcon, members: readonly IMockSession[], showWorkspace: boolean, workspace?: string): IObjectTreeElement<MockRow> => {
 		const collapsed = isCollapsed(sectionKey);
-		const element: IMockSectionRow = { kind: MockRowKind.Section, id: `section:${collectionId}/${sectionKey}`, sectionKey, label, icon, workspace, sessions: members, collapsed };
+		const builtIn = isBuiltInSection(sectionKey) ? sectionKey : undefined;
+		const element: IMockSectionRow = { kind: MockRowKind.Section, id: `section:${collectionId}/${sectionKey}`, sectionKey, label, icon, workspace, builtIn, sessions: members, collapsed };
 		return {
 			element,
 			collapsible: true,
@@ -139,13 +145,22 @@ export function buildMockRows(state: IMockState, collectionId: string, scheme: C
 		};
 	};
 
+	// Built-in sections keep their names and place; a color only changes how they render.
+	const builtInRow = (section: MockBuiltInSection, members: readonly IMockSession[], showWorkspace: boolean): IObjectTreeElement<MockRow> => {
+		const { label, icon } = BUILT_IN_SECTIONS[section];
+		const style = getBuiltInSectionStyle(state, section);
+		return style.color
+			? coloredRow({ key: section, label, builtIn: section, icon, color: style.color, textMode: style.textMode, collapsed: isCollapsed(section) }, members, scheme, showWorkspace)
+			: sectionRow(section, label, icon, members, showWorkspace);
+	};
+
 	const pinned = sessions.filter(s => s.pinned);
 	if (pinned.length) {
-		rows.push(sectionRow('pinned', 'Pinned', Codicon.pinned, pinned, true));
+		rows.push(builtInRow(MockBuiltInSection.Pinned, pinned, true));
 	}
 	const chats = sessions.filter(s => !s.pinned && !s.groupId && isQuickChat(s));
 	if (chats.length) {
-		rows.push(sectionRow('chats', 'Chats', Codicon.commentDiscussion, chats, false));
+		rows.push(builtInRow(MockBuiltInSection.Chats, chats, false));
 	}
 
 	for (const key of getSectionOrder(state, collectionId)) {
@@ -162,7 +177,7 @@ export function buildMockRows(state: IMockState, collectionId: string, scheme: C
 		const members = sessions.filter(s => s.workspace === workspace && !s.groupId && !s.pinned);
 		const style = getWorkspaceStyle(state, workspace);
 		if (style.color) {
-			rows.push(coloredRow({ key, label: workspace, workspace, color: style.color, textMode: style.textMode, collapsed: isCollapsed(key) }, members, scheme, false));
+			rows.push(coloredRow({ key, label: workspace, workspace, icon: Codicon.folder, color: style.color, textMode: style.textMode, collapsed: isCollapsed(key) }, members, scheme, false));
 		} else {
 			rows.push(sectionRow(key, workspace, Codicon.folder, members, false, workspace));
 		}
@@ -175,7 +190,7 @@ export function buildMockRows(state: IMockState, collectionId: string, scheme: C
 	return rows;
 }
 
-function coloredRow(header: { key: MockSectionKey; label: string; groupId?: string; workspace?: string; color: MockColor; textMode: MockTextColorMode; collapsed: boolean }, members: readonly IMockSession[], scheme: ColorScheme, showWorkspace: boolean): IObjectTreeElement<MockRow> {
+function coloredRow(header: { key: MockSectionKey | MockBuiltInSection; label: string; groupId?: string; workspace?: string; builtIn?: MockBuiltInSection; icon?: ThemeIcon; color: MockColor; textMode: MockTextColorMode; collapsed: boolean }, members: readonly IMockSession[], scheme: ColorScheme, showWorkspace: boolean): IObjectTreeElement<MockRow> {
 	const resolved = resolveMockColor(header.color, scheme, header.textMode);
 	const element: IMockGroupRow = { kind: MockRowKind.Group, id: header.key, ...header, resolved, sessions: members };
 	const children: IObjectTreeElement<MockRow>[] = members.length
@@ -226,6 +241,11 @@ export interface IMockListActions {
 	archive(row: IMockSessionRow): void;
 	/** Rows whose header should render as an active drop target. */
 	readonly dropTargetKey: IObservable<string | undefined>;
+}
+
+/** What a colored header represents, for hovers and screen readers. */
+function headerKind(row: IMockGroupRow): string {
+	return row.groupId ? 'group' : row.workspace ? 'workspace' : 'section';
 }
 
 function applyColorVariables(element: HTMLElement, resolved: IResolvedMockColor): void {
@@ -283,11 +303,14 @@ class MockSectionRenderer implements ITreeRenderer<MockRow, FuzzyScore, ISection
 		}));
 
 		template.toolbar.clear();
-		if (row.workspace) {
-			const newSession = template.elementDisposables.add(new Action('cg.newSession', 'New Session', ThemeIcon.asClassName(Codicon.add), true, async () => this.actions.newSession(row)));
-			const color = template.elementDisposables.add(new Action('cg.color', 'Color Workspace…', ThemeIcon.asClassName(Codicon.symbolColor), true, async () => this.actions.editHeader(row, template.container)));
-			template.toolbar.push([color, newSession], { icon: true, label: false });
+		const actions: Action[] = [];
+		if (row.workspace || row.builtIn) {
+			actions.push(template.elementDisposables.add(new Action('cg.color', row.builtIn ? 'Color Section…' : 'Color Workspace…', ThemeIcon.asClassName(Codicon.symbolColor), true, async () => this.actions.editHeader(row, template.container))));
 		}
+		if (row.workspace || row.builtIn === MockBuiltInSection.Chats) {
+			actions.push(template.elementDisposables.add(new Action('cg.newSession', 'New Session', ThemeIcon.asClassName(Codicon.add), true, async () => this.actions.newSession(row))));
+		}
+		template.toolbar.push(actions, { icon: true, label: false });
 	}
 
 	disposeElement(_node: ITreeNode<MockRow, FuzzyScore>, _index: number, template: ISectionTemplate): void {
@@ -347,7 +370,7 @@ class MockGroupRenderer implements ITreeRenderer<MockRow, FuzzyScore, IGroupTemp
 		template.container.classList.toggle('cg-text-light', row.resolved.textIsLight);
 		template.label.textContent = row.label;
 		template.chevron.className = `cg-pill-chevron ${ThemeIcon.asClassName(node.collapsed ? Codicon.chevronRight : Codicon.chevronDown)}`;
-		template.icon.className = row.workspace ? `cg-pill-icon ${ThemeIcon.asClassName(Codicon.folder)}` : 'cg-pill-icon';
+		template.icon.className = row.icon ? `cg-pill-icon ${ThemeIcon.asClassName(row.icon)}` : 'cg-pill-icon';
 		template.count.textContent = node.collapsed && row.sessions.length ? String(row.sessions.length) : '';
 
 		DOM.clearNode(template.status);
@@ -366,16 +389,18 @@ class MockGroupRenderer implements ITreeRenderer<MockRow, FuzzyScore, IGroupTemp
 			template.container.classList.toggle('cg-drop-target', this.actions.dropTargetKey.read(reader) === row.id);
 		}));
 
-		const kind = row.workspace ? 'Workspace' : 'Group';
 		const statusText = attention === MockSessionStatus.NeedsInput ? ' · needs input' : attention === MockSessionStatus.InProgress ? ' · in progress' : attention === MockSessionStatus.Unread ? ' · unread' : '';
 		template.elementDisposables.add(this.hoverService.setupDelayedHover(template.pill, {
-			content: `${row.label} — ${kind.toLowerCase()} · ${describeMockColor(row.color)} · ${row.sessions.length} session${row.sessions.length === 1 ? '' : 's'}${statusText}`,
+			content: `${row.label} — ${headerKind(row)} · ${describeMockColor(row.color)} · ${row.sessions.length} session${row.sessions.length === 1 ? '' : 's'}${statusText}`,
 		}));
 
 		template.toolbar.clear();
-		const newSession = template.elementDisposables.add(new Action('cg.newSession', row.workspace ? 'New Session' : 'New Session in Group', ThemeIcon.asClassName(Codicon.add), true, async () => this.actions.newSession(row)));
-		const edit = template.elementDisposables.add(new Action('cg.edit', row.workspace ? 'Edit Workspace Color…' : 'Edit Group…', ThemeIcon.asClassName(Codicon.edit), true, async () => this.actions.editHeader(row, template.pill)));
-		template.toolbar.push([newSession, edit], { icon: true, label: false });
+		const actions: Action[] = [];
+		if (!row.builtIn || row.builtIn === MockBuiltInSection.Chats) {
+			actions.push(template.elementDisposables.add(new Action('cg.newSession', row.groupId ? 'New Session in Group' : 'New Session', ThemeIcon.asClassName(Codicon.add), true, async () => this.actions.newSession(row))));
+		}
+		actions.push(template.elementDisposables.add(new Action('cg.edit', row.groupId ? 'Edit Group…' : row.workspace ? 'Edit Workspace Color…' : 'Edit Section Color…', ThemeIcon.asClassName(Codicon.edit), true, async () => this.actions.editHeader(row, template.pill))));
+		template.toolbar.push(actions, { icon: true, label: false });
 	}
 
 	disposeElement(_node: ITreeNode<MockRow, FuzzyScore>, _index: number, template: IGroupTemplate): void {
@@ -600,7 +625,7 @@ class MockDragAndDrop implements ITreeDragAndDrop<MockRow> {
 	getDragURI(row: MockRow): string | null {
 		switch (row.kind) {
 			case MockRowKind.Session: return `session:${row.id}`;
-			case MockRowKind.Group: return `header:${row.key}`;
+			case MockRowKind.Group: return row.builtIn ? null : `header:${row.key}`;
 			case MockRowKind.Section: return row.workspace ? `header:${row.sectionKey}` : null;
 			default: return null;
 		}
@@ -620,9 +645,9 @@ class MockDragAndDrop implements ITreeDragAndDrop<MockRow> {
 
 	onDragStart(data: IDragAndDropData): void {
 		const rows = this.rowsOf(data);
-		const header = rows.find(r => r.kind === MockRowKind.Group || (r.kind === MockRowKind.Section && r.workspace));
+		const header = rows.find(r => (r.kind === MockRowKind.Group && !r.builtIn) || (r.kind === MockRowKind.Section && r.workspace));
 		if (header) {
-			this._dragState.set({ sessionIds: [], sectionKey: header.kind === MockRowKind.Group ? header.key : workspaceKey((header as IMockSectionRow).workspace!) }, undefined);
+			this._dragState.set({ sessionIds: [], sectionKey: header.kind === MockRowKind.Group ? header.key as MockSectionKey : workspaceKey((header as IMockSectionRow).workspace!) }, undefined);
 			return;
 		}
 		this._dragState.set({ sessionIds: rows.filter(isSessionRow).map(r => r.session.id) }, undefined);
@@ -660,10 +685,10 @@ class MockDragAndDrop implements ITreeDragAndDrop<MockRow> {
 		const collectionId = this.collectionId();
 		const position = sectorToPosition(sector);
 
-		// Reordering top-level groups and workspaces.
+		// Reordering top-level groups and workspaces. Built-in sections keep their place.
 		const draggedKey = this._dragState.get()?.sectionKey;
 		if (draggedKey) {
-			const targetKey = target.kind === MockRowKind.Group ? target.key : target.kind === MockRowKind.Section && target.workspace ? workspaceKey(target.workspace) : undefined;
+			const targetKey = target.kind === MockRowKind.Group && !target.builtIn ? target.key as MockSectionKey : target.kind === MockRowKind.Section && target.workspace ? workspaceKey(target.workspace) : undefined;
 			if (!targetKey || targetKey === draggedKey) {
 				return undefined;
 			}
@@ -675,9 +700,19 @@ class MockDragAndDrop implements ITreeDragAndDrop<MockRow> {
 			return undefined;
 		}
 		const dragged = sessionIds.map(id => state.sessions.find(s => s.id === id)!).filter(Boolean);
+		// Dropping on Pinned pins; dropping quick chats on Chats takes them out of their groups.
+		const builtInDrop = (section: MockBuiltInSection, headerId: string): IDropIntent | undefined => {
+			if (section === MockBuiltInSection.Pinned) {
+				return { headerId, reaction: OVER, apply: () => this.model.setPinned(sessionIds, true) };
+			}
+			return dragged.every(isQuickChat) ? { headerId, reaction: OVER, apply: () => this.model.removeSessionsFromGroup(sessionIds) } : undefined;
+		};
 
 		switch (target.kind) {
 			case MockRowKind.Group:
+				if (target.builtIn) {
+					return builtInDrop(target.builtIn, target.id);
+				}
 				if (target.groupId) {
 					const groupId = target.groupId;
 					return { headerId: target.id, reaction: OVER, apply: () => this.model.addSessionsToGroup(sessionIds, groupId) };
@@ -693,16 +728,13 @@ class MockDragAndDrop implements ITreeDragAndDrop<MockRow> {
 				}
 				return undefined;
 			case MockRowKind.Section: {
-				if (target.sectionKey === 'pinned') {
-					return { headerId: target.id, reaction: OVER, apply: () => this.model.setPinned(sessionIds, true) };
+				if (target.builtIn) {
+					return builtInDrop(target.builtIn, target.id);
 				}
 				if (target.sectionKey === 'done') {
 					return { headerId: target.id, reaction: OVER, apply: () => this.model.setArchived(sessionIds, true) };
 				}
 				if (target.workspace && dragged.every(s => s.workspace === target.workspace)) {
-					return { headerId: target.id, reaction: OVER, apply: () => this.model.removeSessionsFromGroup(sessionIds) };
-				}
-				if (target.sectionKey === 'chats' && dragged.every(isQuickChat)) {
 					return { headerId: target.id, reaction: OVER, apply: () => this.model.removeSessionsFromGroup(sessionIds) };
 				}
 				return undefined;
@@ -754,7 +786,7 @@ class MockAccessibilityProvider implements IListAccessibilityProvider<MockRow> {
 			case MockRowKind.Section:
 				return `${row.label}, ${row.sessions.length} sessions`;
 			case MockRowKind.Group:
-				return `${row.label}, ${row.workspace ? 'workspace' : 'group'}, ${describeMockColor(row.color)}, ${row.sessions.length} sessions`;
+				return `${row.label}, ${headerKind(row)}, ${describeMockColor(row.color)}, ${row.sessions.length} sessions`;
 			case MockRowKind.Placeholder:
 				return 'Empty group. Drag sessions here.';
 			case MockRowKind.Session: {
@@ -1029,6 +1061,14 @@ export class ColorGroupsMockList extends Disposable {
 
 		if (row.kind === MockRowKind.Group) {
 			const anchor = () => this.getHeaderElement(row.key) ?? this.element;
+			if (row.builtIn) {
+				const section = row.builtIn;
+				return [
+					new Action('cg.editSection', 'Edit Section Color…', undefined, true, async () => this.delegate.editHeader(row, anchor())),
+					new Action('cg.removeColor', 'Remove Color', undefined, true, async () => this.model.setBuiltInSectionColor(section, undefined)),
+					new Action('cg.toggle', row.collapsed ? 'Expand Section' : 'Collapse Section', undefined, true, async () => this.toggle(row)),
+				];
+			}
 			if (row.groupId) {
 				const groupId = row.groupId;
 				return [
@@ -1063,6 +1103,13 @@ export class ColorGroupsMockList extends Disposable {
 				}),
 				new Separator(),
 				new SubmenuAction('cg.moveWorkspace', 'Move Workspace to Collection', this.delegate.buildMoveToCollectionActions(target => this.model.moveWorkspaceToCollection(collectionId, workspace, target), collectionId)),
+			];
+		}
+
+		if (row.kind === MockRowKind.Section && row.builtIn) {
+			return [
+				new Action('cg.colorSection', 'Color Section…', undefined, true, async () => this.delegate.editHeader(row, this.getHeaderElement(row.sectionKey) ?? this.element)),
+				new Action('cg.toggle', row.collapsed ? 'Expand Section' : 'Collapse Section', undefined, true, async () => this.toggle(row)),
 			];
 		}
 		return [];

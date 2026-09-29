@@ -23,7 +23,7 @@ import { ColorScheme } from '../../../../../../platform/theme/common/theme.js';
 import { defaultInputBoxStyles } from '../../../../../../platform/theme/browser/defaultStyles.js';
 import { IThemeService } from '../../../../../../platform/theme/common/themeService.js';
 import { formatContrast, isValidHex, MockColor, mockColorEquals, MockTextColorMode, MOCK_PALETTE_LABELS, MOCK_PALETTE_ORDER, normalizeHex, paletteValue, resolveMockColor } from './colorGroupsMockupColors.js';
-import { ColorGroupsMockModel, getCollection, getCollectionSessions, getGroup, getWorkspaceStyle, IMockCollection, MockCollectionIcon } from './colorGroupsMockupModel.js';
+import { BUILT_IN_SECTIONS, ColorGroupsMockModel, getBuiltInSectionStyle, getCollection, getCollectionSessions, getGroup, getWorkspaceStyle, IMockCollection, MockBuiltInSection, MockCollectionIcon } from './colorGroupsMockupModel.js';
 
 const $ = DOM.$;
 
@@ -154,6 +154,8 @@ function registerPopoverDismissal(root: HTMLElement, hide: () => void): IDisposa
 export interface IHeaderEditorTarget {
 	readonly groupId?: string;
 	readonly workspace?: string;
+	/** A built-in section (Pinned or Chats); only its color can change. */
+	readonly builtIn?: MockBuiltInSection;
 	readonly collectionId: string;
 }
 
@@ -163,6 +165,7 @@ export interface IHeaderEditorActions {
 	ungroup(groupId: string): void;
 	closeGroup(groupId: string): void;
 	removeWorkspaceColor(workspace: string): void;
+	removeSectionColor(section: MockBuiltInSection): void;
 }
 
 function contrastGrade(ratio: number): string {
@@ -191,7 +194,7 @@ export class ColorGroupsHeaderEditor extends Disposable {
 
 	show(target: IHeaderEditorTarget, anchor: HTMLElement): void {
 		const checkpoint = this.model.checkpoint();
-		const label = target.groupId ? 'Edited group' : 'Edited workspace color';
+		const label = target.groupId ? 'Edited group' : target.builtIn ? 'Edited section color' : 'Edited workspace color';
 		const session = new DisposableStore();
 		this.open.value = session;
 		session.add(toDisposable(() => this.model.commitCheckpoint(label, checkpoint)));
@@ -217,38 +220,36 @@ export class ColorGroupsHeaderEditor extends Disposable {
 
 	private render(container: HTMLElement, target: IHeaderEditorTarget, session: DisposableStore): IDisposable {
 		const store = new DisposableStore();
-		const root = DOM.append(container, $('.cg-popover.cg-header-editor', { role: 'dialog', 'aria-label': target.groupId ? 'Edit group' : 'Edit workspace color' }));
+		const root = DOM.append(container, $('.cg-popover.cg-header-editor', { role: 'dialog', 'aria-label': target.groupId ? 'Edit group' : target.builtIn ? 'Edit section color' : 'Edit workspace color' }));
 		const readColor = (): { color: MockColor | undefined; textMode: MockTextColorMode; name: string } => {
 			const state = this.model.current;
 			if (target.groupId) {
 				const group = getGroup(state, target.groupId);
 				return { color: group?.color, textMode: group?.textMode ?? MockTextColorMode.Auto, name: group?.name ?? '' };
 			}
+			if (target.builtIn) {
+				const style = getBuiltInSectionStyle(state, target.builtIn);
+				return { color: style.color, textMode: style.textMode, name: BUILT_IN_SECTIONS[target.builtIn].label };
+			}
 			const style = getWorkspaceStyle(state, target.workspace!);
 			return { color: style.color, textMode: style.textMode, name: target.workspace! };
 		};
-		const writeColor = (color: MockColor) => this.model.update(undefined, draft => {
+		const writeStyle = (patch: { readonly color: MockColor } | { readonly textMode: MockTextColorMode }) => this.model.update(undefined, draft => {
 			if (target.groupId) {
 				const group = getGroup(draft, target.groupId);
 				if (group) {
-					group.color = color;
+					Object.assign(group, patch);
 				}
+			} else if (target.builtIn) {
+				draft.builtInSections = { ...draft.builtInSections, [target.builtIn]: { ...getBuiltInSectionStyle(draft, target.builtIn), ...patch } };
 			} else {
-				draft.workspaces[target.workspace!] = { ...getWorkspaceStyle(draft, target.workspace!), color };
+				draft.workspaces[target.workspace!] = { ...getWorkspaceStyle(draft, target.workspace!), ...patch };
 			}
 		});
-		const writeTextMode = (textMode: MockTextColorMode) => this.model.update(undefined, draft => {
-			if (target.groupId) {
-				const group = getGroup(draft, target.groupId);
-				if (group) {
-					group.textMode = textMode;
-				}
-			} else {
-				draft.workspaces[target.workspace!] = { ...getWorkspaceStyle(draft, target.workspace!), textMode };
-			}
-		});
+		const writeColor = (color: MockColor) => writeStyle({ color });
+		const writeTextMode = (textMode: MockTextColorMode) => writeStyle({ textMode });
 
-		// Name
+		// Name. Only custom groups can be renamed.
 		const nameRow = DOM.append(root, $('.cg-editor-row'));
 		let nameInput: InputBox | undefined;
 		if (target.groupId) {
@@ -267,8 +268,8 @@ export class ColorGroupsHeaderEditor extends Disposable {
 			}));
 		} else {
 			const title = DOM.append(nameRow, $('.cg-editor-title'));
-			DOM.append(title, $(`span${ThemeIcon.asCSSSelector(Codicon.folder)}`));
-			DOM.append(title, $('span', undefined, target.workspace!));
+			DOM.append(title, $(`span${ThemeIcon.asCSSSelector(target.builtIn ? BUILT_IN_SECTIONS[target.builtIn].icon : Codicon.folder)}`));
+			DOM.append(title, $('span', undefined, readColor().name));
 		}
 
 		// Color
@@ -349,8 +350,8 @@ export class ColorGroupsHeaderEditor extends Disposable {
 		const contrastMode = DOM.append(contrast, $('span'));
 		const contrastRatio = DOM.append(contrast, $('span.cg-editor-contrast-ratio'));
 
-		// Move to another collection, as one row of chips.
-		const others = this.model.current.collections.filter(c => c.id !== target.collectionId);
+		// Move to another collection, as one row of chips. Built-in sections exist in every collection.
+		const others = target.builtIn ? [] : this.model.current.collections.filter(c => c.id !== target.collectionId);
 		if (others.length) {
 			const moveRow = DOM.append(root, $('.cg-editor-row.cg-editor-move'));
 			DOM.append(moveRow, $('span.cg-editor-label', undefined, 'Move to'));
@@ -379,11 +380,16 @@ export class ColorGroupsHeaderEditor extends Disposable {
 				run();
 			}));
 		};
-		addAction(Codicon.add, target.groupId ? 'New session in group' : 'New session', () => this.actions.newSession(target));
+		if (target.builtIn !== MockBuiltInSection.Pinned) {
+			addAction(Codicon.add, target.groupId ? 'New session in group' : 'New session', () => this.actions.newSession(target));
+		}
 		if (target.groupId) {
 			const groupId = target.groupId;
 			addAction(Codicon.ungroupByRefType, 'Ungroup', () => this.actions.ungroup(groupId));
 			addAction(Codicon.check, 'Mark group as done', () => this.actions.closeGroup(groupId));
+		} else if (target.builtIn) {
+			const section = target.builtIn;
+			addAction(Codicon.circleSlash, 'Remove color', () => this.actions.removeSectionColor(section));
 		} else {
 			const workspace = target.workspace!;
 			addAction(Codicon.circleSlash, 'Remove color', () => this.actions.removeWorkspaceColor(workspace));

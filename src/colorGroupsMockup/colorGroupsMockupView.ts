@@ -33,11 +33,11 @@ import { ColorScheme } from '../../../../../../platform/theme/common/theme.js';
 import { ComponentFixtureContext, createEditorServices, registerWorkbenchServices } from '../../../../../../workbench/test/browser/componentFixtures/fixtureUtils.js';
 import { ISessionsListModelService, SessionsListModelService } from '../../../../../services/sessions/browser/sessionsListModelService.js';
 import { mock } from '../../../../../../base/test/common/mock.js';
-import { MockPaletteColor } from './colorGroupsMockupColors.js';
+import { MockColor, MockPaletteColor, MOCK_PALETTE_ORDER } from './colorGroupsMockupColors.js';
 import { ColorGroupsMockChat } from './colorGroupsMockupChat.js';
 import { collectionAccent, ColorGroupsCollectionEditor, ColorGroupsHeaderEditor, IHeaderEditorTarget, renderCollectionIcon } from './colorGroupsMockupEditors.js';
 import { ColorGroupsMockList, IMockGroupRow, IMockSectionRow, MockDensity, MockGroupStyle, MockRowKind } from './colorGroupsMockupList.js';
-import { ColorGroupsMockModel, getCollection, getCollectionAttention, getCollectionSessions, getSession, IMockCollection, IMockState, MockSessionStatus } from './colorGroupsMockupModel.js';
+import { ColorGroupsMockModel, getBuiltInSectionStyle, getCollection, getCollectionAttention, getCollectionSessions, getSession, IMockCollection, IMockState, MockSessionStatus } from './colorGroupsMockupModel.js';
 
 const $ = DOM.$;
 
@@ -246,6 +246,7 @@ export class ColorGroupsMockupView extends Disposable {
 			ungroup: groupId => model.ungroup(groupId),
 			closeGroup: groupId => model.closeGroup(groupId),
 			removeWorkspaceColor: workspace => model.setWorkspaceColor(workspace, undefined),
+			removeSectionColor: section => model.setBuiltInSectionColor(section, undefined),
 		}));
 		this.collectionEditor = this._register(instantiationService.createInstance(ColorGroupsCollectionEditor, model, scheme, {
 			deleteCollection: collectionId => this.deleteCollection(collectionId),
@@ -377,19 +378,40 @@ export class ColorGroupsMockupView extends Disposable {
 
 	/** Opens the color editor for a group or workspace header. */
 	editHeader(row: IMockGroupRow | IMockSectionRow, anchor: HTMLElement): void {
+		const collectionId = this.activeCollectionId.get();
 		const target: IHeaderEditorTarget = row.kind === MockRowKind.Group
-			? { groupId: row.groupId, workspace: row.workspace, collectionId: this.activeCollectionId.get() }
-			: { workspace: row.workspace, collectionId: this.activeCollectionId.get() };
-		if (!target.groupId && !target.workspace) {
+			? { groupId: row.groupId, workspace: row.workspace, builtIn: row.builtIn, collectionId }
+			: { workspace: row.workspace, builtIn: row.builtIn, collectionId };
+		if (!target.groupId && !target.workspace && !target.builtIn) {
+			return;
+		}
+		// Coloring an uncolored section starts from the first palette color not already in use.
+		if (target.builtIn && !getBuiltInSectionStyle(this.model.current, target.builtIn).color) {
+			this.model.setBuiltInSectionColor(target.builtIn, this.unusedPaletteColor());
+			this.headerEditor.show(target, this.list.getHeaderElement(target.builtIn) ?? anchor);
 			return;
 		}
 		if (!target.groupId && target.workspace && !this.model.current.workspaces[target.workspace]?.color) {
-			// Coloring an uncolored workspace starts from the first unused palette color.
-			this.model.setWorkspaceColor(target.workspace, { kind: 'palette', id: MockPaletteColor.Blue });
+			this.model.setWorkspaceColor(target.workspace, this.unusedPaletteColor());
 			this.headerEditor.show(target, this.list.getHeaderElement(`workspace:${target.workspace}`) ?? anchor);
 			return;
 		}
 		this.headerEditor.show(target, anchor);
+	}
+
+	private unusedPaletteColor(): MockColor {
+		const state = this.model.current;
+		const collectionId = this.activeCollectionId.get();
+		const used = new Set<MockPaletteColor>();
+		const note = (color: MockColor | undefined) => {
+			if (color?.kind === 'palette') {
+				used.add(color.id);
+			}
+		};
+		state.groups.filter(g => g.collectionId === collectionId).forEach(g => note(g.color));
+		Object.values(state.workspaces).forEach(style => note(style.color));
+		Object.values(state.builtInSections ?? {}).forEach(style => note(style?.color));
+		return { kind: 'palette', id: MOCK_PALETTE_ORDER.find(id => id !== MockPaletteColor.Grey && !used.has(id)) ?? MockPaletteColor.Blue };
 	}
 
 	/** Opens the color editor for a group by id, as the header's pencil does. */

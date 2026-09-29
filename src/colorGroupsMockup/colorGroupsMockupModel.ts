@@ -3,8 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
 import { IObservable, observableValue, transaction } from '../../../../../../base/common/observable.js';
+import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { MockColor, MockPaletteColor, MockTextColorMode, MOCK_PALETTE_ORDER } from './colorGroupsMockupColors.js';
 
 //#region Types
@@ -63,6 +65,18 @@ export interface IMockWorkspaceStyle {
 	defaultCollectionId: string;
 }
 
+/** Built-in sections that can be colored. They keep their names and behavior; only the color is user state. */
+export const enum MockBuiltInSection {
+	Pinned = 'pinned',
+	Chats = 'chats',
+}
+
+/** Presentation of a built-in section. Shared by all collections, like workspace colors. */
+export interface IMockBuiltInSectionStyle {
+	color?: MockColor;
+	textMode: MockTextColorMode;
+}
+
 /** A collection icon: a standard codicon id. */
 export type MockCollectionIcon = string;
 
@@ -77,6 +91,8 @@ export interface IMockState {
 	collections: IMockCollection[];
 	groups: IMockGroup[];
 	workspaces: Record<string, IMockWorkspaceStyle>;
+	/** Colors of the built-in Pinned and Chats sections. */
+	builtInSections: Partial<Record<MockBuiltInSection, IMockBuiltInSectionStyle>>;
 	/** All sessions. Array order is the manual sort order. */
 	sessions: IMockSession[];
 	/** Per collection, the user order of top-level group and workspace sections (`group:<id>` / `workspace:<name>`). */
@@ -125,6 +141,20 @@ export function getSession(state: IMockState, sessionId: string): IMockSession |
 export function getWorkspaceStyle(state: IMockState, workspace: string): IMockWorkspaceStyle {
 	return state.workspaces[workspace] ?? { textMode: MockTextColorMode.Auto, defaultCollectionId: state.collections[0].id };
 }
+
+export function getBuiltInSectionStyle(state: IMockState, section: MockBuiltInSection): IMockBuiltInSectionStyle {
+	// Snapshots saved before built-in colors existed have no map.
+	return state.builtInSections?.[section] ?? { textMode: MockTextColorMode.Auto };
+}
+
+export function isBuiltInSection(sectionKey: string): sectionKey is MockBuiltInSection {
+	return sectionKey === MockBuiltInSection.Pinned || sectionKey === MockBuiltInSection.Chats;
+}
+
+export const BUILT_IN_SECTIONS: Readonly<Record<MockBuiltInSection, { readonly label: string; readonly icon: ThemeIcon }>> = {
+	[MockBuiltInSection.Pinned]: { label: 'Pinned', icon: Codicon.pinned },
+	[MockBuiltInSection.Chats]: { label: 'Chats', icon: Codicon.commentDiscussion },
+};
 
 /** Sessions that belong to a collection's primary list (not archived). */
 export function getCollectionSessions(state: IMockState, collectionId: string): IMockSession[] {
@@ -384,6 +414,12 @@ export class ColorGroupsMockModel extends Disposable {
 			const style = draft.workspaces[workspace] ?? { textMode: MockTextColorMode.Auto, defaultCollectionId: draft.collections[0].id };
 			style.color = color;
 			draft.workspaces[workspace] = style;
+		});
+	}
+
+	setBuiltInSectionColor(section: MockBuiltInSection, color: MockColor | undefined): void {
+		this.update(color ? 'Changed section color' : 'Removed section color', draft => {
+			draft.builtInSections = { ...draft.builtInSections, [section]: { ...getBuiltInSectionStyle(draft, section), color } };
 		});
 	}
 
@@ -764,6 +800,10 @@ export function createSeedState(): IMockState {
 			'vscode-engineering': { color: palette(MockPaletteColor.Green), textMode: MockTextColorMode.Auto, defaultCollectionId: eng },
 			'netmon': { color: palette(MockPaletteColor.Cyan), textMode: MockTextColorMode.Auto, defaultCollectionId: personal },
 			'pocket-ledger': { color: palette(MockPaletteColor.Orange), textMode: MockTextColorMode.Auto, defaultCollectionId: personal },
+		},
+		// Pinned starts colored to show built-in sections take colors too; Chats stays plain.
+		builtInSections: {
+			[MockBuiltInSection.Pinned]: { color: palette(MockPaletteColor.Red), textMode: MockTextColorMode.Auto },
 		},
 		sessions,
 		sectionOrder: {
