@@ -13,7 +13,7 @@ An interactive UX mockup for the VS Code **Agents window**: sessions organized i
 | [Light](https://yoyokrazy.github.io/agents-window-color-groups-mockup/?theme=light) | Interactive demo, 2026 Light theme |
 | [High contrast](https://yoyokrazy.github.io/agents-window-color-groups-mockup/?theme=hc) | Interactive demo, Dark High Contrast |
 | [All states](https://yoyokrazy.github.io/agents-window-color-groups-mockup/___explorer.html?fixture=sessions/colorGroupsMockup) | Component Explorer with every fixture state (styles, editors, collections) in every theme |
-| [Video (MP4)](https://yoyokrazy.github.io/agents-window-color-groups-mockup/walkthrough.mp4) | 70-second walkthrough with captions |
+| [Video (MP4)](https://yoyokrazy.github.io/agents-window-color-groups-mockup/walkthrough.mp4) | 85-second walkthrough with captions |
 
 ![Walkthrough: groups, collections, new session, custom color, drag and drop, undo, styles, theme switch](media/walkthrough.gif)
 
@@ -33,6 +33,7 @@ Everything inside the window is interactive. The **Mockup controls** panel on th
 - **Groups.** Click a group pill to collapse or expand it. Collapsed groups show a session count and the most urgent status.
 - **Group styles.** Switch between **Rail** (default: browser-style pill with a colored rail), **Outline**, **Tint**, and **Dot**, plus **Comfortable** or **Compact** rows.
 - **Edit a group.** Hover a group header and click the pencil (or press F2) to rename it, pick one of the palette colors, or pick a **custom color**. Text color switches between light and dark automatically for contrast, or can be forced.
+- **Pinned and Chats.** The built-in sections take colors too (Pinned starts red). Hover a plain section and click **Color Section…**, or press F2 on it. Built-in sections keep their name and place: only the color is editable, and one color applies in every collection.
 - **Collections.** The Sessions header menu (the collection name above the list) always switches collections. The **Collection switcher** control adds browser-style icons in the title bar (default) or labeled tabs at the top of the sidebar, or leaves just the menu. Press Ctrl+1 to Ctrl+3 in any mode. Each collection remembers its open session. Right-click an icon or tab (or use the menu) to edit a collection; the editor opens right below it. Use **+** in the title bar or tabs, or **New Collection…** in the menu, to add one.
 - **Drag and drop.** Drag sessions onto a group header to regroup them, or onto a collection icon to move them to another collection. Drag group headers to reorder them.
 - **Context menus.** Right-click sessions, groups, workspaces, and collection icons to group, move, or mark things done.
