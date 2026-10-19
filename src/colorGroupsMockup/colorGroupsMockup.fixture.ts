@@ -120,7 +120,6 @@ const TODAY = defineSessionsListFixture({
 		compact: true,
 		width: 340,
 		height: 900,
-		showEmptyGroups: true,
 		expanded: [{ section: 'pinned' }, { section: 'quickchats' }],
 		collapsed: [
 			{ group: 'eng' }, { group: 'priv' }, { group: 'misc' }, { group: 'backlog' }, { group: 'powertoys' },
